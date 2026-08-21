@@ -16,9 +16,20 @@ import { useUploads } from "@/hooks/useUploads";
 
 type DialogState =
   | { kind: "delete"; entry: Entry }
-  | { kind: "rename"; entry: Entry }
+  | { kind: "rename"; entry: Entry; draft?: string }
+  | { kind: "renameConflict"; entry: Entry; newName: string }
   | { kind: "newFolder" }
   | null;
+
+/** Human-readable fallback for statuses that arrive without a JSON error body. */
+function actionError(action: string, status: number): string {
+  if (status === 401 || status === 403) return `You do not have permission to ${action}.`;
+  const label = action.charAt(0).toUpperCase() + action.slice(1);
+  if (status === 404) {
+    return `${label} failed — it was changed or removed in the meantime. Refresh and try again.`;
+  }
+  return `${label} failed — the server could not be reached. Try again.`;
+}
 
 export default function FileBrowser({ bucket }: { bucket: string | null }) {
   return (
@@ -66,6 +77,41 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
     if (entry.url) window.location.href = entry.url;
   }, []);
 
+  /**
+   * Queue uploads after skipping names that already exist in this folder.
+   * The server rejects duplicates at create time (before any bytes move),
+   * but catching them here gives immediate, actionable feedback instead of
+   * one failed row per file working through the queue.
+   */
+  const startUploads = useCallback(
+    (files: FileList | File[], targetPrefix: string) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      const existing = new Set(listing.entries.map((e) => e.name));
+      const fresh: File[] = [];
+      const duplicates: string[] = [];
+      const seen = new Set<string>();
+      for (const file of list) {
+        if (existing.has(file.name) || seen.has(file.name)) {
+          duplicates.push(file.name);
+        } else {
+          seen.add(file.name);
+          fresh.push(file);
+        }
+      }
+      if (duplicates.length > 0) {
+        toast(
+          "error",
+          duplicates.length === 1
+            ? `“${duplicates[0]}” already exists here and was skipped. Rename it or delete the existing copy first.`
+            : `${duplicates.length} files were skipped — they already exist in this folder.`,
+        );
+      }
+      if (fresh.length > 0) uploads.addFiles(fresh, targetPrefix);
+    },
+    [listing.entries, uploads, toast],
+  );
+
   const copyUrl = useCallback(
     (entry: Entry) => {
       if (!entry.url) return;
@@ -109,7 +155,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
         }).then(async (res) => {
           if (!res.ok) {
             const body = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(body.error ?? `Delete failed (${res.status})`);
+            throw new Error(body.error ?? actionError("delete this item", res.status));
           }
         });
         toast("success", `Deleted "${entry.name}"`);
@@ -126,8 +172,11 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
 
   const submitRename = useCallback(
     async (newName: string, overwrite = false) => {
-      if (dialog?.kind !== "rename") return;
-      const entry = dialog.entry;
+      const entry =
+        dialog?.kind === "rename" || dialog?.kind === "renameConflict"
+          ? dialog.entry
+          : null;
+      if (!entry) return;
       setBusy(true);
       try {
         const res = await fetch("/api/files/rename", {
@@ -135,17 +184,15 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ from: entry.key, to: newName, isFolder: entry.type === "folder", overwrite }),
         });
-        if (res.status === 409) {
+        if (res.status === 409 && !overwrite) {
+          // Hand the decision to an in-app dialog; the typed name is kept.
           setBusy(false);
-          const proceed = window.confirm(
-            `"${newName}" already exists. Replace it? The existing ${entry.type} will be overwritten.`,
-          );
-          if (proceed) await submitRename(newName, true);
+          setDialog({ kind: "renameConflict", entry, newName });
           return;
         }
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `Rename failed (${res.status})`);
+          throw new Error(body.error ?? actionError("rename this item", res.status));
         }
         toast("success", `Renamed to "${newName}"`);
         setDialog(null);
@@ -154,6 +201,10 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
       } catch (err) {
         setBusy(false);
         toast("error", (err as Error).message || "Rename failed");
+        // Overwriting failed mid-flight: back to the prompt with the draft intact.
+        if (overwrite && dialog?.kind === "renameConflict") {
+          setDialog({ kind: "rename", entry, draft: newName });
+        }
       }
     },
     [dialog, listing, toast],
@@ -170,7 +221,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `Could not create folder (${res.status})`);
+          throw new Error(body.error ?? actionError("create this folder", res.status));
         }
         toast("success", `Folder "${name}" created`);
         setDialog(null);
@@ -235,7 +286,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
       e.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
-      if (e.dataTransfer?.files.length) uploads.addFiles(e.dataTransfer.files, prefix);
+      if (e.dataTransfer?.files.length) startUploads(e.dataTransfer.files, prefix);
     };
 
     window.addEventListener("dragenter", onDragEnter);
@@ -248,7 +299,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
     };
-  }, [prefix, uploads]);
+  }, [prefix, startUploads]);
 
   /* ---------- render ---------- */
 
@@ -275,7 +326,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
 
         <Toolbar
           onUploadClick={() => fileInputRef.current?.click()}
-          onFilesSelected={(files) => uploads.addFiles(files, prefix)}
+          onFilesSelected={(files) => startUploads(files, prefix)}
           onNewFolder={() => setDialog({ kind: "newFolder" })}
           query={query}
           onQueryChange={setQuery}
@@ -361,14 +412,14 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           message={
             dialog.entry.type === "folder" ? (
               <>
-                Delete the folder <strong className="font-medium text-zinc-900" dir="auto">{dialog.entry.name}</strong> and{" "}
+                Delete the folder <strong className="font-medium text-zinc-900">{dialog.entry.name}</strong> and{" "}
                 <strong className="font-medium text-red-700">everything inside it</strong>?
                 <br />
                 This action cannot be undone.
               </>
             ) : (
               <>
-                Delete <strong className="font-medium text-zinc-900" dir="auto">{dialog.entry.name}</strong>?
+                Delete <strong className="font-medium text-zinc-900">{dialog.entry.name}</strong>?
                 <br />
                 This action cannot be undone.
               </>
@@ -383,10 +434,32 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           busy={busy}
           title={dialog.entry.type === "folder" ? "Rename folder" : "Rename file"}
           label="New name"
-          initialValue={dialog.entry.name}
+          initialValue={dialog.draft ?? dialog.entry.name}
           confirmLabel="Rename"
           onCancel={() => setDialog(null)}
           onSubmit={(value) => void submitRename(value)}
+        />
+      )}
+
+      {dialog?.kind === "renameConflict" && (
+        <ConfirmDialog
+          open
+          busy={busy}
+          destructive
+          title={dialog.entry.type === "folder" ? "Replace folder" : "Replace file"}
+          confirmLabel="Replace"
+          onCancel={() =>
+            setDialog({ kind: "rename", entry: dialog.entry, draft: dialog.newName })
+          }
+          onConfirm={() => void submitRename(dialog.newName, true)}
+          message={
+            <>
+              “<strong className="font-medium text-zinc-900">{dialog.newName}</strong>” already exists in this folder.
+              <br />
+              Replacing it will <strong className="font-medium text-red-700">permanently overwrite</strong> the existing{" "}
+              {dialog.entry.type}. This cannot be undone.
+            </>
+          }
         />
       )}
 

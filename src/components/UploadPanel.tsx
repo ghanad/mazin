@@ -74,7 +74,7 @@ export function UploadPanel({
               <div className="mb-1.5 flex items-start gap-2">
                 <StateGlyph state={upload.state} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-zinc-800" title={upload.name} dir="auto">
+                  <p className="truncate text-sm font-medium text-zinc-800" title={upload.name}>
                     {upload.name}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500">

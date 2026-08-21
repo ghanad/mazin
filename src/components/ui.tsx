@@ -59,16 +59,24 @@ export interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** When false, Escape and backdrop clicks cannot dismiss the dialog. */
+  dismissable?: boolean;
 }
 
-export function Modal({ open, onClose, title, children }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  dismissable = true,
+}: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && dismissable) onClose();
     };
     document.addEventListener("keydown", onKey);
     // Move focus into the dialog for keyboard users.
@@ -80,7 +88,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
       document.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, [open, onClose]);
+  }, [open, onClose, dismissable]);
 
   if (!open) return null;
 
@@ -88,7 +96,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-zinc-950/25"
-        onClick={onClose}
+        onClick={dismissable ? onClose : undefined}
         aria-hidden="true"
       />
       <div

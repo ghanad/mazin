@@ -28,20 +28,21 @@ export function ConfirmDialog({
   busy = false,
 }: ConfirmDialogProps) {
   return (
-    <Modal open={open} onClose={onCancel} title={title}>
+    <Modal open={open} onClose={onCancel} title={title} dismissable={!busy}>
       <div className="flex items-start gap-3 px-5 pb-2 pt-2">
         {destructive && <AlertIcon width={20} height={20} className="mt-0.5 shrink-0 text-red-500" />}
         <div className="min-w-0 text-sm leading-relaxed text-zinc-600">{message}</div>
       </div>
       <div className="flex justify-end gap-2 px-5 pb-5 pt-4">
-        <Button onClick={onCancel} disabled={busy}>
+        {/* Destructive actions never start on Enter: focus rests on Cancel. */}
+        <Button onClick={onCancel} disabled={busy} data-autofocus={destructive || undefined}>
           Cancel
         </Button>
         <Button
           variant={destructive ? "danger" : "primary"}
           onClick={onConfirm}
           disabled={busy}
-          data-autofocus
+          data-autofocus={destructive ? undefined : true}
         >
           {busy ? "Working…" : confirmLabel}
         </Button>
@@ -91,7 +92,7 @@ export function PromptDialog({
   }, [open, initialValue]);
 
   return (
-    <Modal open={open} onClose={onCancel} title={title}>
+    <Modal open={open} onClose={onCancel} title={title} dismissable={!busy}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -112,7 +113,6 @@ export function PromptDialog({
             onChange={(e) => setValue(e.target.value)}
             autoComplete="off"
             spellCheck={false}
-            dir="auto"
             className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>

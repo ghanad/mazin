@@ -1,0 +1,27 @@
+# Example: run the file server against your Ceph RGW cluster.
+#
+#   cp .env.example .env    # fill in real values first
+#   docker compose up -d
+#
+# The application container never stores files locally; all data lives in S3.
+
+services:
+  file-server:
+    build: .
+    image: internal-file-server:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --spider
+        - --quiet
+        - http://127.0.0.1:3000/api/health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

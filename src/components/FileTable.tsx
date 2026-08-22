@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import type { Entry } from "@/types";
+import { isTextFile } from "@/lib/mime";
 import {
   DownloadIcon,
   FileIcon,
@@ -125,6 +126,7 @@ export interface FileTableProps {
   onCopyUrl: (entry: Entry) => void;
   onRename: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
+  onOpenText: (entry: Entry) => void;
 }
 
 export function FileTable({
@@ -134,6 +136,7 @@ export function FileTable({
   onCopyUrl,
   onRename,
   onDelete,
+  onOpenText,
 }: FileTableProps) {
   return (
     <table className="w-full border-separate border-spacing-0 text-sm">
@@ -163,6 +166,7 @@ export function FileTable({
             onCopyUrl={onCopyUrl}
             onRename={onRename}
             onDelete={onDelete}
+            onOpenText={onOpenText}
           />
         ))}
       </tbody>
@@ -177,10 +181,12 @@ function TableRow({
   onCopyUrl,
   onRename,
   onDelete,
+  onOpenText,
 }: {
   entry: Entry;
 } & Omit<FileTableProps, "entries">) {
   const isFolder = entry.type === "folder";
+  const canView = !isFolder && isTextFile(entry.key);
 
   const actions: MenuAction[] = isFolder
     ? [
@@ -189,6 +195,7 @@ function TableRow({
         { label: "Delete", icon: <TrashIcon />, onSelect: () => onDelete(entry), danger: true },
       ]
     : [
+        ...(canView ? [{ label: "View", icon: <FileIcon />, onSelect: () => onOpenText(entry) }] : []),
         { label: "Download", icon: <DownloadIcon />, onSelect: () => onDownload(entry) },
         { label: "Copy URL", icon: <LinkIcon />, onSelect: () => onCopyUrl(entry) },
         { label: "Rename", icon: <PencilIcon />, onSelect: () => onRename(entry) },
@@ -198,7 +205,7 @@ function TableRow({
   return (
     <tr
       className="group border-b border-zinc-100 transition-colors last:border-b-0 hover:bg-zinc-50"
-      onDoubleClick={() => (isFolder ? onOpenFolder(entry) : onDownload(entry))}
+      onDoubleClick={() => (isFolder ? onOpenFolder(entry) : canView ? onOpenText(entry) : onDownload(entry))}
     >
       <td className="py-0 pl-4 pr-3">
         <div className="flex min-w-0 items-center gap-2.5 py-2">
@@ -220,19 +227,13 @@ function TableRow({
               {entry.name}
             </button>
           ) : (
-            <a
-              href={entry.url ?? "#"}
-              onClick={(e) => {
-                // Let the browser handle the download natively; the server
-                // sends Content-Disposition: attachment.
-                if (!entry.url) e.preventDefault();
-              }}
-              download
+            <button
+              onClick={() => canView ? onOpenText(entry) : onDownload(entry)}
               className="min-w-0 truncate rounded text-left text-zinc-800 transition-colors hover:text-blue-700 hover:underline hover:decoration-blue-300 hover:underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
               title={entry.name}
             >
               {entry.name}
-            </a>
+            </button>
           )}
         </div>
       </td>

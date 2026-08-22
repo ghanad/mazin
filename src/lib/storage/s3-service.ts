@@ -42,6 +42,7 @@ import type {
   StorageEntry,
   StorageService,
 } from "./types";
+import { ConflictError } from "@/lib/errors";
 
 /** Objects above this size are copied via multipart copy (AWS/RGW limit for
  * single CopyObject is 5 GiB; stay well below it). */
@@ -307,6 +308,38 @@ export class S3StorageService implements StorageService {
 
   async head(key: string): Promise<ObjectStat | null> {
     return this.stat(key);
+  }
+
+  /**
+   * RGW-compatible optimistic write. PutObject does not expose a portable
+   * If-Match precondition across Ceph versions, so we re-head immediately
+   * before PutObject and reject a changed object. This is intentionally a
+   * documented check-then-write fallback rather than a silent overwrite.
+   */
+  async putText(key: string, content: Uint8Array, contentType: string, expectedEtag: string): Promise<ObjectStat> {
+    const safeKey = validateKey(key);
+    const current = await this.stat(safeKey);
+    if (!current) throw new NotFoundError("Object not found");
+    if (!current.etag || current.etag !== expectedEtag) {
+      throw new ConflictError("The file changed on the server", { etag: current.etag });
+    }
+    try {
+      const result = await this.client.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: safeKey,
+        Body: content,
+        ContentType: contentType || DEFAULT_MIME,
+      }));
+      return {
+        key: safeKey,
+        size: content.byteLength,
+        lastModified: new Date(),
+        etag: result.ETag,
+        contentType: contentType || DEFAULT_MIME,
+      };
+    } catch (err) {
+      throw wrapError(err, "put-text");
+    }
   }
 
   async deleteFile(key: string): Promise<void> {

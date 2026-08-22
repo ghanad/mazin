@@ -11,7 +11,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
 import { S3StorageService } from "@/lib/storage/s3-service";
-import { NotFoundError, RangeNotSatisfiableError, StorageError } from "@/lib/errors";
+import { ConflictError, NotFoundError, RangeNotSatisfiableError, StorageError } from "@/lib/errors";
 
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: vi.fn(
@@ -245,6 +245,28 @@ describe("deleteFile", () => {
     await service(client).deleteFile("ISO/old ubuntu.iso");
     expect(sent[0]).toBeInstanceOf(DeleteObjectCommand);
     expect(sent[0].input.Key).toBe("ISO/old ubuntu.iso");
+  });
+});
+
+describe("putText", () => {
+  it("checks the current ETag before PutObject and preserves MIME", async () => {
+    const { client, sent } = makeClient({
+      HeadObjectCommand: () => ({ ContentLength: 1, LastModified: new Date(), ETag: '"old"', ContentType: "text/plain" }),
+      PutObjectCommand: () => ({ ETag: '"new"' }),
+    });
+    const result = await service(client).putText("notes.txt", new TextEncoder().encode("hi"), "text/plain", '"old"');
+    expect(result.etag).toBe('"new"');
+    expect(sent[1]).toBeInstanceOf(PutObjectCommand);
+    expect(sent[1].input).toMatchObject({ Key: "notes.txt", ContentType: "text/plain" });
+    expect(Buffer.from(sent[1].input.Body as Uint8Array).toString()).toBe("hi");
+  });
+
+  it("does not PutObject when the ETag changed", async () => {
+    const { client, sent } = makeClient({
+      HeadObjectCommand: () => ({ ContentLength: 1, LastModified: new Date(), ETag: '"newer"' }),
+    });
+    await expect(service(client).putText("notes.txt", new TextEncoder().encode("hi"), "text/plain", '"old"')).rejects.toBeInstanceOf(ConflictError);
+    expect(sent.some((command) => command instanceof PutObjectCommand)).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@ vi.mock("@/lib/storage", () => ({
 }));
 
 import { DELETE, GET } from "@/app/api/files/route";
+import { GET as getText, PUT as putText } from "@/app/api/files/text/route";
 import { POST as renameRoute } from "@/app/api/files/rename/route";
 
 function jsonRequest(method: string, body: unknown) {
@@ -22,6 +23,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.storage = {
     list: vi.fn(),
+    head: vi.fn(),
+    get: vi.fn(),
+    putText: vi.fn(),
     exists: vi.fn().mockResolvedValue(false),
     deleteFile: vi.fn().mockResolvedValue(undefined),
     deleteFolder: vi.fn().mockResolvedValue(3),
@@ -88,6 +92,52 @@ describe("GET /api/files", () => {
   it("rejects invalid prefixes with 400", async () => {
     const res = await GET(new NextRequest("https://x.test/api/files?prefix=..%2Fetc"));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("/api/files/text", () => {
+  it("retrieves bounded valid UTF-8 text", async () => {
+    mocks.storage.head.mockResolvedValue({ key: "notes.txt", size: 5, lastModified: new Date("2026-08-21T00:00:00Z"), etag: '"one"', contentType: "text/plain" });
+    mocks.storage.get.mockResolvedValue({ status: 206, body: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("hello")); controller.close(); } }), contentRange: "bytes 0-4/5", contentType: "text/plain" });
+    const res = await getText(new NextRequest("https://x.test/api/files/text?key=notes.txt"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ key: "notes.txt", content: "hello", etag: '"one"' });
+    expect(mocks.storage.get).toHaveBeenCalledWith("notes.txt", "bytes=0-1048575");
+  });
+
+  it("rejects invalid keys and binary/oversized content", async () => {
+    expect((await getText(new NextRequest("https://x.test/api/files/text?key=../secret.txt"))).status).toBe(400);
+    mocks.storage.head.mockResolvedValue({ key: "image.bin", size: 2, lastModified: new Date(), etag: '"x"', contentType: "application/octet-stream" });
+    mocks.storage.get.mockResolvedValue({ status: 206, body: new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([0, 1])); controller.close(); } }), contentRange: "bytes 0-1/2", contentType: "application/octet-stream" });
+    expect((await getText(new NextRequest("https://x.test/api/files/text?key=image.bin"))).status).toBe(400);
+    mocks.storage.head.mockResolvedValue({ key: "large.txt", size: 1048577, lastModified: new Date(), etag: '"x"', contentType: "text/plain" });
+    expect((await getText(new NextRequest("https://x.test/api/files/text?key=large.txt"))).status).toBe(400);
+  });
+
+  it("returns 404 for missing files and 400 for invalid UTF-8", async () => {
+    mocks.storage.head.mockResolvedValue(null);
+    expect((await getText(new NextRequest("https://x.test/api/files/text?key=missing.txt"))).status).toBe(404);
+    mocks.storage.head.mockResolvedValue({ key: "bad.txt", size: 2, lastModified: new Date(), etag: '"x"', contentType: "text/plain" });
+    mocks.storage.get.mockResolvedValue({ status: 206, body: new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([0xc3, 0x28])); controller.close(); } }), contentRange: "bytes 0-1/2", contentType: "text/plain" });
+    expect((await getText(new NextRequest("https://x.test/api/files/text?key=bad.txt"))).status).toBe(400);
+  });
+
+  it("saves with the expected ETag and maps conflicts to 409", async () => {
+    mocks.storage.head.mockResolvedValue({ key: "notes.txt", size: 5, lastModified: new Date(), etag: '"one"', contentType: "text/plain" });
+    mocks.storage.putText.mockResolvedValue({ key: "notes.txt", size: 3, lastModified: new Date(), etag: '"two"', contentType: "text/plain" });
+    const res = await putText(jsonRequest("PUT", { key: "notes.txt", content: "hey", expectedEtag: '"one"' }));
+    expect(res.status).toBe(200);
+    expect(mocks.storage.putText).toHaveBeenCalledWith("notes.txt", expect.any(Uint8Array), "text/plain", '"one"');
+    const { ConflictError } = await import("@/lib/errors");
+    mocks.storage.putText.mockRejectedValue(new ConflictError("changed"));
+    expect((await putText(jsonRequest("PUT", { key: "notes.txt", content: "new", expectedEtag: '"one"' }))).status).toBe(409);
+  });
+
+  it("infers a missing stored MIME from the key when saving", async () => {
+    mocks.storage.head.mockResolvedValue({ key: "config.json", size: 2, lastModified: new Date(), etag: '"one"' });
+    mocks.storage.putText.mockResolvedValue({ key: "config.json", size: 2, lastModified: new Date(), etag: '"two"', contentType: "application/json" });
+    await putText(jsonRequest("PUT", { key: "config.json", content: "{}", expectedEtag: '"one"' }));
+    expect(mocks.storage.putText).toHaveBeenCalledWith("config.json", expect.any(Uint8Array), "application/json", '"one"');
   });
 });
 

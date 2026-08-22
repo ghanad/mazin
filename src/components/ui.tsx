@@ -61,6 +61,7 @@ export interface ModalProps {
   children: ReactNode;
   /** When false, Escape and backdrop clicks cannot dismiss the dialog. */
   dismissable?: boolean;
+  className?: string;
 }
 
 export function Modal({
@@ -69,6 +70,7 @@ export function Modal({
   title,
   children,
   dismissable = true,
+  className = "",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -104,7 +106,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="animate-rise-in relative w-full max-w-md rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-950/10"
+        className={`animate-rise-in relative w-full max-w-md rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-950/10 ${className}`}
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-1">
           <h2 className="text-[15px] font-semibold text-zinc-900">{title}</h2>

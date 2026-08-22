@@ -91,6 +91,9 @@ export interface StorageService {
   /** Metadata only — must not transfer the object body. */
   head(key: string): Promise<ObjectStat | null>;
 
+  /** Save a small text object only if its current ETag matches expectedEtag. */
+  putText(key: string, content: Uint8Array, contentType: string, expectedEtag: string): Promise<ObjectStat>;
+
   deleteFile(key: string): Promise<void>;
 
   /** Recursively delete every object under `prefix` (inclusive). */

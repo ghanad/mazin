@@ -1,5 +1,14 @@
 import type { ListResponse, SearchResponse } from "@/types";
 
+export interface TextFileResponse {
+  key: string;
+  content: string;
+  contentType?: string;
+  size: number;
+  etag?: string;
+  lastModified?: string;
+}
+
 /** Error thrown by API calls; carries HTTP status and conflict flags. */
 export class ApiError extends Error {
   status: number;
@@ -74,6 +83,17 @@ export function renameEntry(
   return request("/api/files/rename", {
     method: "POST",
     body: JSON.stringify({ from, to, isFolder, overwrite }),
+  });
+}
+
+export function getTextFile(key: string): Promise<TextFileResponse> {
+  return request<TextFileResponse>(`/api/files/text?key=${encodeURIComponent(key)}`);
+}
+
+export function saveTextFile(key: string, content: string, expectedEtag: string): Promise<TextFileResponse> {
+  return request<TextFileResponse>("/api/files/text", {
+    method: "PUT",
+    body: JSON.stringify({ key, content, expectedEtag }),
   });
 }
 

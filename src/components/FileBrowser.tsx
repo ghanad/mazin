@@ -14,6 +14,7 @@ import { Button } from "./ui";
 import { useFileListing } from "@/hooks/useFileListing";
 import { useSearch } from "@/hooks/useSearch";
 import { useUploads } from "@/hooks/useUploads";
+import { TextFileViewer } from "./TextFileViewer";
 
 type DialogState =
   | { kind: "delete"; entry: Entry }
@@ -55,6 +56,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [textFile, setTextFile] = useState<Entry | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
@@ -375,6 +377,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
               onCopyUrl={copyUrl}
               onRename={(entry) => setDialog({ kind: "rename", entry })}
               onDelete={(entry) => setDialog({ kind: "delete", entry })}
+              onOpenText={setTextFile}
             />
           )}
         </section>
@@ -406,6 +409,8 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
         onDismiss={uploads.dismiss}
         onClearFinished={uploads.clearFinished}
       />
+
+      <TextFileViewer file={textFile} onClose={() => setTextFile(null)} onSaved={listing.reload} />
 
       {/* Dialogs */}
       {dialog?.kind === "delete" && (

@@ -75,6 +75,29 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 export const DEFAULT_MIME = "application/octet-stream";
 
+/** Maximum text object size accepted by the in-app viewer/editor. */
+export const MAX_TEXT_FILE_BYTES = 1024 * 1024;
+
+const TEXT_EXTENSIONS = new Set([
+  "txt", "log", "md", "csv", "json", "yaml", "yml", "toml", "xml", "ini", "conf",
+  "sh", "bash", "py", "js", "mjs", "ts", "html", "htm", "css", "asc", "sha256",
+]);
+
+const TEXT_APPLICATION_MIMES = new Set([
+  "application/json", "application/xml", "application/yaml", "application/x-yaml",
+  "application/toml", "application/javascript", "application/x-javascript",
+  "application/x-sh", "application/x-shellscript", "application/sql",
+]);
+
+/** Central policy for files eligible for bounded text viewing/editing. */
+export function isTextFile(filenameOrKey: string, contentType?: string): boolean {
+  const mime = contentType?.toLowerCase().split(";", 1)[0].trim();
+  if (mime?.startsWith("text/") || (mime && TEXT_APPLICATION_MIMES.has(mime))) return true;
+  const base = filenameOrKey.split("/").pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  return dot > 0 && TEXT_EXTENSIONS.has(base.slice(dot + 1).toLowerCase());
+}
+
 export function getMimeType(filenameOrKey: string): string {
   const base = filenameOrKey.split("/").pop() ?? "";
   const dot = base.lastIndexOf(".");

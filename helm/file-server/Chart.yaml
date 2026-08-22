@@ -3,7 +3,7 @@ name: file-server
 description: Internal file server backed by S3-compatible storage (Next.js standalone)
 type: application
 version: 0.1.0
-appVersion: "1.0.0"
+appVersion: "v0.1.0"
 keywords:
   - files
   - s3

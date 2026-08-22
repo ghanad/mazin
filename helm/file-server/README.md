@@ -23,7 +23,6 @@ kubectl -n file-server create secret generic file-server-s3 \
 ```sh
 helm upgrade --install file-server ./helm/file-server \
   --namespace file-server --create-namespace \
-  --set image.repository=registry.internal.example.com/file-server \
   --set config.s3Endpoint=https://s3.internal.example.com \
   --set s3.existingSecret=file-server-s3
 ```
@@ -42,7 +41,7 @@ release; an out-of-band Secret is left untouched.
 | Key | Default | Description |
 | --- | --- | --- |
 | `replicaCount` | `2` | Number of replicas (ignored when `autoscaling.enabled`) |
-| `image.repository` | `registry.internal.example.com/file-server` | Image repository |
+| `image.repository` | `ghanad/mazin` | Image repository |
 | `image.tag` | `""` | Defaults to `.Chart.AppVersion` |
 | `image.pullPolicy` | `IfNotPresent` | Pull policy |
 | `imagePullSecrets` | `[]` | Registry credentials |

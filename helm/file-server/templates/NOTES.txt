@@ -1,0 +1,38 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- $host := (index .Values.ingress.hosts 0).host }}
+{{- if .Values.ingress.tls }}
+  https://{{ $host }}/
+{{- else }}
+  http://{{ $host }}/
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "file-server.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "file-server.fullname" . }} 8080:{{ .Values.service.port }}
+  echo "Visit http://127.0.0.1:8080"
+{{- end }}
+
+2. Check readiness (verifies the S3/RGW backend answers):
+   kubectl --namespace {{ .Release.Namespace }} exec deploy/{{ include "file-server.fullname" . }} -- \
+     wget -qO- http://127.0.0.1:3000/api/health/ready
+
+3. Credentials:
+{{- if .Values.s3.existingSecret }}
+   Using existing Secret "{{ .Values.s3.existingSecret }}".
+{{- else if or .Values.s3.accessKey .Values.s3.secretKey }}
+   WARNING: credentials are stored in chart values / release metadata.
+   Preferred alternative — create a Secret out-of-band and set s3.existingSecret:
+     kubectl -n {{ .Release.Namespace }} create secret generic file-server-s3 \
+       --from-literal=S3_ACCESS_KEY='...' \
+       --from-literal=S3_SECRET_KEY='...'
+{{- else }}
+   No S3 credentials configured yet. Create them before rollout succeeds:
+     kubectl -n {{ .Release.Namespace }} create secret generic file-server-s3 \
+       --from-literal=S3_ACCESS_KEY='...' \
+       --from-literal=S3_SECRET_KEY='...'
+   ...then upgrade with --set s3.existingSecret=file-server-s3, or pass
+   --set s3.accessKey=... --set s3.secretKey=... (not recommended).
+{{- end }}

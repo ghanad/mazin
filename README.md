@@ -131,6 +131,24 @@ kubectl -n file-server create secret generic file-server-s3 \
 
 No PVCs are needed — all data lives in S3, so replicas scale horizontally.
 
+### Helm
+
+The same deployment is packaged as a Helm chart in [`helm/file-server/`](helm/file-server/) (see its README for the full values reference):
+
+```bash
+kubectl -n file-server create secret generic file-server-s3 \
+  --from-literal=S3_ACCESS_KEY='...' \
+  --from-literal=S3_SECRET_KEY='...'
+
+helm upgrade --install file-server helm/file-server \
+  --namespace file-server --create-namespace \
+  --set image.repository=registry.internal.example.com/file-server \
+  --set config.s3Endpoint=https://s3.internal.example.com \
+  --set s3.existingSecret=file-server-s3
+```
+
+The raw manifests in `k8s/` and the chart are kept equivalent; prefer one or the other per cluster to avoid drift.
+
 ## Ceph RGW configuration notes
 
 1. **Path-style addressing**: the app defaults to `S3_FORCE_PATH_STYLE=true`, which virtually all RGW deployments require.
@@ -231,6 +249,7 @@ src/
   types/
 scripts/mock-s3.mjs     # Dev-only S3 simulator
 k8s/                    # Kubernetes manifests
+helm/file-server/       # Helm chart (equivalent to the k8s/ manifests)
 ```
 
 The storage layer sits behind a small `StorageService` interface (`src/lib/storage/types.ts`), so future backends (local disk, NFS) can be added without touching UI or API code.

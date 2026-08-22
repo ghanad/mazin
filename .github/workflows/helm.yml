@@ -1,0 +1,43 @@
+name: helm
+
+on:
+  push:
+    paths:
+      - "helm/**"
+      - ".github/workflows/helm.yml"
+  pull_request:
+    paths:
+      - "helm/**"
+      - ".github/workflows/helm.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Lint
+        run: helm lint helm/file-server --strict
+
+      - name: Template (default values)
+        run: helm template file-server helm/file-server > /dev/null
+
+      - name: Template (existing secret)
+        run: >
+          helm template file-server helm/file-server
+          --set s3.existingSecret=file-server-s3
+          --set ingress.tls[0].secretName=file-server-tls
+          --set 'ingress.tls[0].hosts[0]=files.internal.example.com'
+          > /dev/null
+
+      - name: Template (autoscaling enabled)
+        run: >
+          helm template file-server helm/file-server
+          --set s3.accessKey=dummy
+          --set s3.secretKey=dummy
+          --set autoscaling.enabled=true
+          > /dev/null

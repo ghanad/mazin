@@ -1,0 +1,20 @@
+# Patterns to ignore when building packages.
+# This supports shell glob matching, relative path matching, and negation.
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.tmp
+*.orig
+*~
+.project
+.settings/
+.idea/
+*.tmproj
+.vscode/
+node_modules/

@@ -20,6 +20,12 @@ serviceAccount:
 
 podAnnotations: {}
 podLabels: {}
+# Optional static hostname-to-IP mappings written to each pod's /etc/hosts.
+# Example:
+#   - ip: "10.10.10.1"
+#     hostnames:
+#       - "s3.test.com"
+hostAliases: []
 
 podSecurityContext:
   runAsNonRoot: true

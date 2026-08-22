@@ -49,6 +49,7 @@ release; an out-of-band Secret is left untouched.
 | `serviceAccount.create` | `true` | Create a dedicated ServiceAccount (token not mounted) |
 | `serviceAccount.name` | `""` | Override the generated name |
 | `podAnnotations` / `podLabels` | `{}` | Extra pod metadata |
+| `hostAliases` | `[]` | Static hostname-to-IP mappings added to each pod's `/etc/hosts` |
 | `podSecurityContext` | non-root uid/gid 1001, RuntimeDefault seccomp | Pod-level security |
 | `securityContext` | no privilege escalation, read-only rootfs, all caps dropped | Container-level security |
 | `strategy` | RollingUpdate, maxUnavailable 0 | Deployment strategy |

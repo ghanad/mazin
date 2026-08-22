@@ -98,6 +98,15 @@ export function isTextFile(filenameOrKey: string, contentType?: string): boolean
   return dot > 0 && TEXT_EXTENSIONS.has(base.slice(dot + 1).toLowerCase());
 }
 
+/** Central policy for files eligible for inline PDF viewing. */
+export function isPdfFile(filenameOrKey: string, contentType?: string): boolean {
+  const mime = contentType?.toLowerCase().split(";", 1)[0].trim();
+  if (mime === "application/pdf") return true;
+  const base = filenameOrKey.split("/").pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  return dot > 0 && base.slice(dot + 1).toLowerCase() === "pdf";
+}
+
 export function getMimeType(filenameOrKey: string): string {
   const base = filenameOrKey.split("/").pop() ?? "";
   const dot = base.lastIndexOf(".");

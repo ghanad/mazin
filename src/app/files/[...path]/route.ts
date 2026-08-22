@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { DEFAULT_MIME } from "@/lib/mime";
+import { DEFAULT_MIME, isPdfFile } from "@/lib/mime";
 import { contentDispositionFor, isForwardableRange } from "@/lib/http/path";
 import { NotFoundError, RangeNotSatisfiableError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -52,6 +52,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const obj = await getStorage().get(key, forwardRange);
     const headers = baseHeaders(key);
     headers.set("Content-Type", obj.contentType ?? DEFAULT_MIME);
+    // Opt-in inline rendering for the in-app PDF viewer; everything else
+    // keeps the forced `attachment` disposition from baseHeaders().
+    if (request.nextUrl.searchParams.get("inline") === "1" && isPdfFile(key, obj.contentType)) {
+      headers.set("Content-Disposition", contentDispositionFor(key, "inline"));
+    }
     if (obj.contentLength !== undefined) {
       headers.set("Content-Length", String(obj.contentLength));
     }

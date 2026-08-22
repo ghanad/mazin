@@ -15,6 +15,7 @@ import { useFileListing } from "@/hooks/useFileListing";
 import { useSearch } from "@/hooks/useSearch";
 import { useUploads } from "@/hooks/useUploads";
 import { TextFileViewer } from "./TextFileViewer";
+import { PdfFileViewer } from "./PdfFileViewer";
 
 type DialogState =
   | { kind: "delete"; entry: Entry }
@@ -57,6 +58,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [textFile, setTextFile] = useState<Entry | null>(null);
+  const [pdfFile, setPdfFile] = useState<Entry | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
@@ -378,6 +380,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
               onRename={(entry) => setDialog({ kind: "rename", entry })}
               onDelete={(entry) => setDialog({ kind: "delete", entry })}
               onOpenText={setTextFile}
+              onOpenPdf={setPdfFile}
             />
           )}
         </section>
@@ -411,6 +414,8 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
       />
 
       <TextFileViewer file={textFile} onClose={() => setTextFile(null)} onSaved={listing.reload} />
+
+      <PdfFileViewer file={pdfFile} onClose={() => setPdfFile(null)} />
 
       {/* Dialogs */}
       {dialog?.kind === "delete" && (

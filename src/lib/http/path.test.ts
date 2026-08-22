@@ -74,6 +74,11 @@ describe("contentDispositionFor", () => {
     const header = contentDispositionFor('weird"name.iso');
     expect(header).toContain('filename="weird_name.iso"');
   });
+
+  it("supports inline disposition for previews", () => {
+    const header = contentDispositionFor("docs/manual.pdf", "inline");
+    expect(header).toMatch(/^inline; filename="manual\.pdf"/);
+  });
 });
 
 describe("parseRangeHeader", () => {

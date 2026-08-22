@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import type { Entry } from "@/types";
-import { isTextFile } from "@/lib/mime";
+import { isPdfFile, isTextFile } from "@/lib/mime";
 import {
   DownloadIcon,
   EyeIcon,
@@ -128,6 +128,7 @@ export interface FileTableProps {
   onRename: (entry: Entry) => void;
   onDelete: (entry: Entry) => void;
   onOpenText: (entry: Entry) => void;
+  onOpenPdf: (entry: Entry) => void;
 }
 
 export function FileTable({
@@ -138,6 +139,7 @@ export function FileTable({
   onRename,
   onDelete,
   onOpenText,
+  onOpenPdf,
 }: FileTableProps) {
   return (
     <table className="w-full border-separate border-spacing-0 text-sm">
@@ -168,6 +170,7 @@ export function FileTable({
             onRename={onRename}
             onDelete={onDelete}
             onOpenText={onOpenText}
+            onOpenPdf={onOpenPdf}
           />
         ))}
       </tbody>
@@ -183,11 +186,13 @@ function TableRow({
   onRename,
   onDelete,
   onOpenText,
+  onOpenPdf,
 }: {
   entry: Entry;
 } & Omit<FileTableProps, "entries">) {
   const isFolder = entry.type === "folder";
-  const canView = !isFolder && isTextFile(entry.key);
+  const canViewText = !isFolder && isTextFile(entry.key);
+  const canViewPdf = !isFolder && isPdfFile(entry.key);
 
   const actions: MenuAction[] = isFolder
     ? [
@@ -196,7 +201,8 @@ function TableRow({
         { label: "Delete", icon: <TrashIcon />, onSelect: () => onDelete(entry), danger: true },
       ]
     : [
-        ...(canView ? [{ label: "View", icon: <EyeIcon />, onSelect: () => onOpenText(entry) }] : []),
+        ...(canViewText ? [{ label: "View", icon: <EyeIcon />, onSelect: () => onOpenText(entry) }] : []),
+        ...(canViewPdf ? [{ label: "View", icon: <EyeIcon />, onSelect: () => onOpenPdf(entry) }] : []),
         { label: "Download", icon: <DownloadIcon />, onSelect: () => onDownload(entry) },
         { label: "Copy URL", icon: <LinkIcon />, onSelect: () => onCopyUrl(entry) },
         { label: "Rename", icon: <PencilIcon />, onSelect: () => onRename(entry) },
@@ -260,9 +266,9 @@ function TableRow({
       </td>
       <td className="py-1.5 pl-3 pr-4 text-right">
         <div className="flex items-center justify-end gap-1">
-          {canView && (
+          {(canViewText || canViewPdf) && (
             <button
-              onClick={() => onOpenText(entry)}
+              onClick={() => (canViewPdf ? onOpenPdf(entry) : onOpenText(entry))}
               aria-label={`View ${entry.name}`}
               title="View"
               className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 opacity-0 transition-all hover:bg-zinc-200/70 hover:text-zinc-700 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 group-hover:opacity-100 max-sm:opacity-100"

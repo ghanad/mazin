@@ -31,15 +31,21 @@ export function encodeKeyToUrlPath(key: string): string {
 /**
  * Build the final basename for a Content-Disposition header:
  * RFC 6266/5987 combo with ASCII fallback and UTF-8 encoded value.
+ *
+ * Callers may opt into `inline` (e.g. the PDF viewer); downloads stay
+ * `attachment` by default.
  */
-export function contentDispositionFor(key: string): string {
+export function contentDispositionFor(
+  key: string,
+  disposition: "attachment" | "inline" = "attachment",
+): string {
   const name = key.split("/").filter(Boolean).pop() ?? "download";
   const asciiFallback =
     name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_") || "download";
   const encoded = encodeURIComponent(name)
     .replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
     .replace(/%20/g, "%20");
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
 
 /**

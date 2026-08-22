@@ -17,6 +17,19 @@ export interface ListResult {
   entries: StorageEntry[];
 }
 
+export interface SearchHit extends StorageEntry {
+  /** Parent folder path without trailing slash ("" = bucket root). */
+  folder: string;
+}
+
+export interface SearchResult {
+  query: string;
+  prefix: string;
+  hits: SearchHit[];
+  /** True when the scan stopped early because a cap was reached. */
+  truncated: boolean;
+}
+
 export interface ObjectStat {
   key: string;
   size: number;
@@ -58,6 +71,13 @@ export interface ProgressInfo {
 export interface StorageService {
   /** List one folder level (immediate children), folders before files. */
   list(prefix: string): Promise<ListResult>;
+
+  /**
+   * Case-insensitive substring search across every object under `prefix`
+   * (recursively, all depths). Matches file and folder names; results are
+   * capped so huge buckets cannot stall the request.
+   */
+  search(query: string, prefix?: string): Promise<SearchResult>;
 
   stat(key: string): Promise<ObjectStat | null>;
   exists(key: string): Promise<boolean>;

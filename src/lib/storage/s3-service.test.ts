@@ -465,3 +465,81 @@ describe("multipart upload API", () => {
     await expect(service(failing.client).abortMultipartUpload("k", "id")).resolves.toBeUndefined();
   });
 });
+
+describe("search", () => {
+  const page = (contents: { Key: string; Size?: number }[], truncated = false) => ({
+    IsTruncated: truncated,
+    Contents: contents.map((c) => ({ ...c, LastModified: new Date("2026-08-21T00:00:00Z") })),
+  });
+
+  it("matches files and folder markers at any depth, folders first", async () => {
+    const { client, sent } = makeClient({
+      ListObjectsV2Command: () =>
+        page([
+          { Key: "ISO/ubuntu-22.04.iso", Size: 10 },
+          { Key: "ISO/", Size: 0 },
+          { Key: "docs/unrelated.txt", Size: 1 },
+          { Key: "tools/ubuntu-upgrade.sh", Size: 2 },
+          { Key: "old/ubuntu/", Size: 0 },
+        ]),
+    });
+    const result = await service(client).search("UBUNTU");
+
+    // Case-insensitive; scope marker of the searched prefix itself excluded.
+    expect(sent[0].input.Prefix).toBeUndefined();
+    expect(result.hits.map((h) => `${h.type}:${h.name}`)).toEqual([
+      "folder:ubuntu",
+      "file:ubuntu-22.04.iso",
+      "file:ubuntu-upgrade.sh",
+    ]);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("scopes the search under a prefix and reports parent folders", async () => {
+    const { client, sent } = makeClient({
+      ListObjectsV2Command: () => page([{ Key: "ISO/Linux/ubuntu.iso", Size: 3 }]),
+    });
+    const result = await service(client).search("ubuntu", "ISO/");
+
+    expect(sent[0].input.Prefix).toBe("ISO/");
+    expect(result.prefix).toBe("ISO/");
+    expect(result.hits[0]).toMatchObject({
+      key: "ISO/Linux/ubuntu.iso",
+      name: "ubuntu.iso",
+      type: "file",
+      folder: "ISO/Linux",
+    });
+  });
+
+  it("returns an empty result for blank queries without touching S3", async () => {
+    const { client } = makeClient({});
+    const result = await service(client).search("   ");
+    expect(result.hits).toEqual([]);
+    expect(result.query).toBe("   ");
+  });
+
+  it("follows pagination until results run out", async () => {
+    let call = 0;
+    const { client } = makeClient({
+      ListObjectsV2Command: () => {
+        call += 1;
+        return call === 1
+          ? { IsTruncated: true, NextContinuationToken: "t2", Contents: [{ Key: "a/one.bin", Size: 1, LastModified: new Date() }] }
+          : { IsTruncated: false, Contents: [{ Key: "a/two.bin", Size: 1, LastModified: new Date() }] };
+      },
+    });
+    const result = await service(client).search(".bin");
+    expect(result.hits.map((h) => h.name)).toEqual(["one.bin", "two.bin"]);
+  });
+
+  it("marks results as truncated when the hit cap is reached", async () => {
+    const contents = Array.from({ length: 250 }, (_, i) => ({
+      Key: `f/match-${String(i).padStart(3, "0")}.bin`,
+      Size: 1,
+    }));
+    const { client } = makeClient({ ListObjectsV2Command: () => page(contents) });
+    const result = await service(client).search("match");
+    expect(result.hits).toHaveLength(200);
+    expect(result.truncated).toBe(true);
+  });
+});

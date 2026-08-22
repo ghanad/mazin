@@ -9,6 +9,18 @@ export interface Entry {
   url?: string;
 }
 
+export interface SearchHit extends Entry {
+  /** Parent folder path without trailing slash ("" = bucket root). */
+  folder: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  prefix: string;
+  hits: SearchHit[];
+  truncated: boolean;
+}
+
 export interface ListResponse {
   prefix: string;
   entries: Entry[];

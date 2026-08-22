@@ -1,4 +1,4 @@
-import type { ListResponse } from "@/types";
+import type { ListResponse, SearchResponse } from "@/types";
 
 /** Error thrown by API calls; carries HTTP status and conflict flags. */
 export class ApiError extends Error {
@@ -43,6 +43,12 @@ export function listFiles(prefix: string): Promise<ListResponse> {
   if (prefix) params.set("prefix", prefix);
   const qs = params.toString();
   return request<ListResponse>(`/api/files${qs ? `?${qs}` : ""}`);
+}
+
+export function searchFiles(query: string, prefix = ""): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q: query });
+  if (prefix) params.set("prefix", prefix);
+  return request<SearchResponse>(`/api/search?${params.toString()}`);
 }
 
 export function createFolder(prefix: string, name: string): Promise<{ ok: boolean }> {

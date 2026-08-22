@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, type RefObject } from "react";
-import type { SortDirection, SortField } from "@/types";
-import { ArrowUpDownIcon, FolderPlusIcon, RefreshIcon, SearchIcon, SpinnerIcon, UploadIcon } from "./icons";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import type { SearchHit, SortDirection, SortField } from "@/types";
+import { ArrowUpDownIcon, FileIcon, FolderIcon, FolderPlusIcon, RefreshIcon, SearchIcon, SpinnerIcon, UploadIcon } from "./icons";
 import { Button } from "./ui";
 
 export interface ToolbarProps {
@@ -17,6 +17,15 @@ export interface ToolbarProps {
   onRefresh: () => void;
   refreshing: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  /** Bucket-wide search results for `query` (see useSearch). */
+  search: {
+    hits: SearchHit[];
+    loading: boolean;
+    error: string | null;
+    truncated: boolean;
+    activeQuery: string;
+  };
+  onOpenHit: (hit: SearchHit) => void;
 }
 
 const SORT_LABELS: Record<SortField, string> = {
@@ -37,9 +46,25 @@ export function Toolbar({
   onRefresh,
   refreshing,
   fileInputRef,
+  search,
+  onOpenHit,
 }: ToolbarProps) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [selected, setSelected] = useState(0);
+
+  const trimmed = query.trim();
+  const showResults = searchFocused && trimmed.length >= 2;
+
+  useEffect(() => {
+    setSelected(0);
+  }, [search.activeQuery, search.hits.length]);
+
+  const openHit = (hit: SearchHit) => {
+    onOpenHit(hit);
+    setSearchFocused(false);
+    searchRef.current?.blur();
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +96,7 @@ export function Toolbar({
       {/* Search / filter */}
       <div
         className={`relative h-9 w-full transition-colors sm:w-56 ${
-          searchFocused ? "sm:w-72" : ""
+          searchFocused ? "sm:w-80" : ""
         }`}
       >
         <SearchIcon
@@ -90,10 +115,25 @@ export function Toolbar({
             if (e.key === "Escape") {
               onQueryChange("");
               searchRef.current?.blur();
+              return;
+            }
+            if (!showResults || search.hits.length === 0) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setSelected((i) => Math.min(i + 1, search.hits.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setSelected((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              openHit(search.hits[selected]);
             }
           }}
-          placeholder="Filter current folder"
-          aria-label="Filter files in this folder"
+          placeholder="Search all files…"
+          aria-label="Search files in every folder"
+          aria-expanded={showResults}
+          aria-controls="global-search-results"
+          role="combobox"
           className="h-9 w-full rounded-md border border-zinc-300 bg-white pl-8 pr-8 text-sm text-zinc-900 placeholder:text-zinc-400 transition-[width] duration-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
         {query && (
@@ -109,6 +149,68 @@ export function Toolbar({
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
+        )}
+
+        {/* Bucket-wide results */}
+        {showResults && (
+          <div
+            id="global-search-results"
+            className="animate-rise-in absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-96 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-950/10"
+          >
+            {search.loading && search.hits.length === 0 ? (
+              <p className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-500">
+                <SpinnerIcon width={14} height={14} /> Searching…
+              </p>
+            ) : search.error ? (
+              <p role="alert" className="px-3 py-2 text-sm text-red-600">{search.error}</p>
+            ) : search.hits.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-zinc-500">
+                No matches in any folder for “{trimmed}”
+              </p>
+            ) : (
+              <>
+                <p className="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                  All folders
+                </p>
+                <ul role="listbox" aria-label="Search results across all folders">
+                  {search.hits.map((hit, i) => (
+                    <li key={`${hit.type}:${hit.key}`} role="presentation">
+                      <button
+                        role="option"
+                        aria-selected={i === selected}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => openHit(hit)}
+                        onMouseEnter={() => setSelected(i)}
+                        title={hit.folder ? `${hit.folder}/${hit.name}` : hit.name}
+                        className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm ${
+                          i === selected ? "bg-blue-50" : ""
+                        }`}
+                      >
+                        {hit.type === "folder" ? (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-blue-50">
+                            <FolderIcon width={14} height={14} className="text-blue-500" />
+                          </span>
+                        ) : (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-zinc-100">
+                            <FileIcon width={13} height={13} className="text-zinc-400" />
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate font-medium text-zinc-800">{hit.name}</span>
+                        <span className="hidden min-w-0 max-w-[45%] truncate text-xs text-zinc-400 sm:block">
+                          {hit.folder || "/"}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {(search.truncated || search.hits.length >= 200) && (
+                  <p className="border-t border-zinc-100 px-3 py-1.5 text-xs text-zinc-400">
+                    Showing the first 200 matches — refine your search.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 

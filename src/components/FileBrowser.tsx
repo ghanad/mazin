@@ -12,6 +12,7 @@ import { Toolbar } from "./Toolbar";
 import { UploadPanel } from "./UploadPanel";
 import { Button } from "./ui";
 import { useFileListing } from "@/hooks/useFileListing";
+import { useSearch } from "@/hooks/useSearch";
 import { useUploads } from "@/hooks/useUploads";
 
 type DialogState =
@@ -56,6 +57,8 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
+
+  const search = useSearch(prefix, query);
 
   // Clear the filter when navigating to a different folder.
   useEffect(() => {
@@ -339,6 +342,11 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           onRefresh={listing.reload}
           refreshing={listing.refreshing}
           fileInputRef={fileInputRef}
+          search={search}
+          onOpenHit={(hit) => {
+            // Land in the hit's folder; the match itself is visible there.
+            navigate(hit.type === "folder" ? `${hit.folder}${hit.name}/` : hit.folder);
+          }}
         />
 
         <section
@@ -536,7 +544,10 @@ function EmptyFilterState({ query, onClear }: { query: string; onClear: () => vo
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
       <p className="text-sm text-zinc-600">
-        No items match <span className="font-medium text-zinc-900">“{query}”</span>
+        No items named <span className="font-medium text-zinc-900">“{query}”</span> in this folder.
+      </p>
+      <p className="text-sm text-zinc-500">
+        Use the search box above to find it in all folders.
       </p>
       <button
         onClick={onClear}

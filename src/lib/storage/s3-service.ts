@@ -27,6 +27,7 @@ import { DEFAULT_MIME } from "@/lib/mime";
 import {
   folderNameFromKey,
   normalizePrefix,
+  parentPathOf,
   validateKey,
 } from "@/lib/validation/keys";
 import type {
@@ -36,6 +37,8 @@ import type {
   ObjectStat,
   PresignedPart,
   ProgressInfo,
+  SearchHit,
+  SearchResult,
   StorageEntry,
   StorageService,
 } from "./types";
@@ -47,6 +50,9 @@ const COPY_PART_SIZE = 128 * 1024 * 1024;
 /** Hard cap so a pathological bucket cannot make listing run forever. */
 const LIST_SAFETY_CAP = 20_000;
 const DELETE_BATCH_SIZE = 1000;
+/** Search result and scan caps — keeps the request bounded on huge buckets. */
+const SEARCH_MAX_HITS = 200;
+const SEARCH_SCAN_CAP = 50_000;
 
 function isNotFound(err: unknown): boolean {
   const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
@@ -163,6 +169,85 @@ export class S3StorageService implements StorageService {
 
     logger.debug("listed prefix", { prefix: normalized, entries: entries.length });
     return { prefix: normalized, entries };
+  }
+
+  /**
+   * Recursive case-insensitive substring search under `prefix`.
+   *
+   * Lists every object (no delimiter) and matches the last path segment of
+   * each key — so searching "ubuntu" finds files *and* folders at any depth.
+   * Stops after SEARCH_MAX_HITS matches or SEARCH_SCAN_CAP scanned objects,
+   * whichever comes first; `truncated` tells the client when that happened.
+   */
+  async search(query: string, prefix = ""): Promise<SearchResult> {
+    const scope = normalizePrefix(prefix);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return { query, prefix: scope, hits: [], truncated: false };
+
+    const hits: SearchHit[] = [];
+    let token: string | undefined;
+    let scanned = 0;
+    let truncated = false;
+
+    try {
+      do {
+        const res = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: scope || undefined,
+            MaxKeys: 1000,
+            ContinuationToken: token,
+          }),
+        );
+
+        for (const obj of res.Contents ?? []) {
+          if (!obj.Key) continue;
+          scanned += 1;
+          // Hide the zero-byte markers that represent folders themselves
+          // unless the folder name itself matches the query.
+          const isFolderMarker = obj.Key.endsWith("/");
+          const relative = obj.Key.slice(scope.length).replace(/\/+$/, "");
+          const name = relative.split("/").pop() ?? "";
+          if (!name || !name.toLowerCase().includes(needle)) continue;
+
+          hits.push({
+            key: isFolderMarker ? relative : obj.Key,
+            name,
+            type: isFolderMarker ? "folder" : "file",
+            size: isFolderMarker ? null : obj.Size ?? null,
+            lastModified: obj.LastModified?.toISOString() ?? null,
+            etag: obj.ETag,
+            folder: parentPathOf(obj.Key),
+          });
+          if (hits.length >= SEARCH_MAX_HITS) {
+            truncated = true;
+            break;
+          }
+        }
+
+        // Stop scanning when a cap was reached and the bucket has more pages.
+        token = !truncated && res.IsTruncated ? res.NextContinuationToken : undefined;
+        if (token && scanned >= SEARCH_SCAN_CAP) {
+          truncated = true;
+          token = undefined;
+        }
+      } while (token);
+    } catch (err) {
+      throw wrapError(err, "search");
+    }
+
+    const byName = (a: SearchHit, b: SearchHit) =>
+      a.type === b.type ? a.name.localeCompare(b.name) : a.type === "folder" ? -1 : 1;
+    hits.sort(byName);
+
+    logger.debug("search finished", {
+      query: needle,
+      prefix: scope,
+      hits: hits.length,
+      scanned,
+      truncated,
+    });
+    return { query, prefix: scope, hits, truncated };
   }
 
   async stat(key: string): Promise<ObjectStat | null> {

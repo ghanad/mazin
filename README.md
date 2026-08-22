@@ -13,6 +13,7 @@ Version 1 intentionally ships **without authentication**: it is designed to run 
 - Full **HTTP Range** (`206 Partial Content`) and **HEAD** support on downloads
 - Create / rename / delete files and folders (recursive delete with explicit confirmation)
 - Client-side search filter, sorting by name/size/date, manual refresh
+- **Global search across all folders** with a debounced results dropdown (server-backed, capped)
 - Human-readable sizes, modification dates, empty/loading/error states
 - Health endpoints suitable for Kubernetes probes
 
@@ -208,6 +209,7 @@ Multi-range requests are answered with the full object (200), matching common se
 | Method & path | Purpose |
 |---|---|
 | `GET /api/files?prefix=…` | List one folder level (folders first, full pagination) |
+| `GET /api/search?q=…&prefix=…` | Recursive case-insensitive name search under a prefix (capped at 200 hits) |
 | `DELETE /api/files` | Delete `{key, type: "file"\|"folder"}` (folder = recursive) |
 | `POST /api/files/rename` | Rename `{from, to, isFolder, overwrite?}` (copy + delete) |
 | `POST /api/folders` | Create folder `{prefix, name}` |

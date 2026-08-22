@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Entry, SortDirection, SortField } from "@/types";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { CliUploadDialog } from "./CliUploadDialog";
 import { ConfirmDialog, PromptDialog } from "./dialogs";
 import { AlertIcon, FolderIcon, UploadIcon } from "./icons";
 import { FileTable } from "./FileTable";
@@ -23,7 +24,6 @@ type DialogState =
   | { kind: "renameConflict"; entry: Entry; newName: string }
   | { kind: "newFolder" }
   | null;
-
 /** Human-readable fallback for statuses that arrive without a JSON error body. */
 function actionError(action: string, status: number): string {
   if (status === 401 || status === 403) return `You do not have permission to ${action}.`;
@@ -59,6 +59,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
   const [dragging, setDragging] = useState(false);
   const [textFile, setTextFile] = useState<Entry | null>(null);
   const [pdfFile, setPdfFile] = useState<Entry | null>(null);
+  const [cliOpen, setCliOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
@@ -335,6 +336,7 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           onUploadClick={() => fileInputRef.current?.click()}
           onFilesSelected={(files) => startUploads(files, prefix)}
           onNewFolder={() => setDialog({ kind: "newFolder" })}
+          onCliUploadClick={() => setCliOpen(true)}
           query={query}
           onQueryChange={setQuery}
           sortField={sortField}
@@ -492,6 +494,8 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           onSubmit={(value) => void submitNewFolder(value)}
         />
       )}
+
+      <CliUploadDialog open={cliOpen} onClose={() => setCliOpen(false)} prefix={prefix} />
     </div>
   );
 }

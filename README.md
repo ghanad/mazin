@@ -8,6 +8,7 @@ Version 1 intentionally ships **without authentication**: it is designed to run 
 
 - Folder browsing with breadcrumbs (`Home / ISO / Linux`)
 - Upload single or multiple files via drag-and-drop or the Upload button
+- **CLI Upload from Linux servers** — copy-paste `curl` or a Python 3 script straight from the UI (see [CLI Upload](#cli-upload-from-linux-servers))
 - **Direct browser → Ceph multipart uploads** with progress, retry and cancel (files up to ~10 GB and beyond)
 - Direct, stable HTTP download URLs that work with `wget`, `curl`, BMC/iLO remote-mount tools
 - Full **HTTP Range** (`206 Partial Content`) and **HEAD** support on downloads
@@ -56,6 +57,8 @@ npm run typecheck   # tsc --noEmit
 npm test            # vitest unit/integration tests
 npm run build       # production build
 ```
+
+The test suite includes an end-to-end harness for `public/file-server-upload.py` (it spawns the real script against a fake server). Those tests are skipped automatically on machines without `python3`.
 
 ### Developing without a real Ceph cluster
 
@@ -204,6 +207,108 @@ Content-Length: 1048576
 
 Multi-range requests are answered with the full object (200), matching common server behavior.
 
+## CLI Upload (from Linux servers)
+
+The **CLI Upload** button in the toolbar opens a dialog with two ready-to-run recipes for uploading files from any Linux server: a **Python** tab and a **curl** tab. Both target the folder you currently have open and never contain credentials — presigned URLs are minted at run time.
+
+### Prerequisites
+
+- The Linux server must be able to reach the File Server application *and* the Ceph/S3 endpoint (`S3_ENDPOINT`) directly over the network, because file bytes are transferred straight to storage using short-lived presigned URLs.
+- Python 3 (any modern 3.x) for the script variant — **standard library only**, nothing to `pip install`.
+- `curl` plus [`jq`](https://jqlang.github.io/jq/) for the curl variant.
+- The application currently has **no authentication**: anyone who can reach it can upload. Keep it on a trusted internal network.
+
+### Downloading the upload script
+
+Click **Download script** in the dialog's Python tab, or fetch the stable URL directly:
+
+```bash
+wget https://files.example.com/file-server-upload.py
+```
+
+The served copy is the same file that lives at `public/file-server-upload.py` in the repository — there is only one source of truth.
+
+### Python examples
+
+```bash
+# Bucket root
+python3 file-server-upload.py \
+    --server https://files.example.com \
+    --file ./ubuntu.iso
+
+# Into the iso/linux prefix
+python3 file-server-upload.py \
+    --server https://files.example.com \
+    --file ./ubuntu.iso \
+    --prefix iso/linux
+
+# Replace an existing file
+python3 file-server-upload.py \
+    --server https://files.example.com \
+    --file ./ubuntu.iso \
+    --prefix iso/linux \
+    --overwrite
+
+# Server URL via environment variable instead of --server
+FILE_SERVER_URL=https://files.example.com python3 file-server-upload.py --file big.iso
+
+# Tune parallel part uploads (default 3)
+python3 file-server-upload.py --server https://files.example.com --file big.iso --concurrency 4
+```
+
+Behaviour summary:
+
+| Option | Meaning |
+|---|---|
+| `--server URL` | File Server base URL (falls back to `FILE_SERVER_URL`) |
+| `--file PATH` | Local file; its basename becomes the destination name |
+| `--prefix PREFIX` | Destination folder (default: bucket root) |
+| `--overwrite` | Replace an existing destination file |
+| `--concurrency N` | Parallel part uploads for large files (default `3`) |
+
+Small files are uploaded with one presigned PUT. Larger files use multipart upload with concurrent parts, per-part retries (three attempts, exponential backoff, fresh presigned URLs when needed), live progress, and automatic abort cleanup on failure or Ctrl+C/SIGTERM. Exit code is `0` on success.
+
+### curl example (small files only)
+
+The dialog's curl tab copies a self-contained bash snippet that calls `POST /api/uploads/create`, checks the response mode, and uploads with `curl --upload-file`. Edit the `FILE`, `SERVER`, `PREFIX` and `CONTENT_TYPE` variables at the top.
+
+**Limitation:** it supports only files for which the API returns `mode: "single"` — with the default configuration that is up to and including **32 MiB**. If the server answers `mode: "multipart"`, the snippet stops with an error and points you to the Python script.
+
+```bash
+#!/usr/bin/env bash
+# Dependency: jq must be installed (used to parse the JSON response).
+set -euo pipefail
+
+FILE=./release.tar.gz                   # local file to upload
+SERVER=https://files.example.com        # File Server base URL
+PREFIX=''                               # destination prefix ('' = bucket root)
+CONTENT_TYPE=application/octet-stream
+
+NAME="$(basename "$FILE")"
+SIZE=$(stat -c%s "$FILE")               # GNU stat (Linux)
+
+RESPONSE=$(curl -fsS -X POST "$SERVER/api/uploads/create" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg p "$PREFIX" --arg n "$NAME" --argjson s "$SIZE" \
+        '{prefix: $p, name: $n, size: $s, contentType: $CONTENT_TYPE}')")
+
+MODE=$(jq -r '.mode' <<<"$RESPONSE")
+if [ "$MODE" != "single" ]; then
+  echo "Server returned mode '$MODE'; curl supports mode 'single' only" >&2
+  echo "(files up to and including 32 MiB)." >&2
+  echo "Use the Python script for larger files:" >&2
+  echo "  python3 file-server-upload.py --server $SERVER --file $FILE --prefix $PREFIX" >&2
+  exit 1
+fi
+
+URL=$(jq -r '.url' <<<"$RESPONSE")      # presigned URL — treat as a secret
+curl -fsS -X PUT --upload-file "$FILE" -H "Content-Type: $CONTENT_TYPE" "$URL"
+
+echo "Uploaded to ${PREFIX:+$PREFIX/}$NAME"
+```
+
+Presigned URLs embed temporary credentials: keep them out of logs and shell history.
+
 ## API overview
 
 | Method & path | Purpose |
@@ -243,12 +348,15 @@ src/
   hooks/               # useFileListing, useUploads
   lib/
     api/               # Response/error helpers
+    cli/               # CLI Upload command generation (+ Python script harness)
     http/              # Key<->URL encoding, Range parsing, base URL
     s3/                # S3 client factory (RGW-compatible settings)
     storage/           # StorageService interface + S3 implementation
     uploads/           # Multipart math (part sizing)
     validation/        # Key/name validation
   types/
+public/
+  file-server-upload.py  # Standalone CLI uploader (served at /file-server-upload.py)
 scripts/mock-s3.mjs     # Dev-only S3 simulator
 k8s/                    # Kubernetes manifests
 helm/file-server/       # Helm chart (equivalent to the k8s/ manifests)

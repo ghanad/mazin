@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { SearchHit, SortDirection, SortField } from "@/types";
-import { ArrowUpDownIcon, FileIcon, FolderIcon, FolderPlusIcon, RefreshIcon, SearchIcon, SpinnerIcon, UploadIcon } from "./icons";
+import { ArrowUpDownIcon, FileIcon, FolderIcon, FolderPlusIcon, RefreshIcon, SearchIcon, SpinnerIcon, TerminalIcon, UploadIcon } from "./icons";
 import { Button } from "./ui";
 
 export interface ToolbarProps {
   onUploadClick: () => void;
   onFilesSelected: (files: FileList) => void;
   onNewFolder: () => void;
+  onCliUploadClick: () => void;
   query: string;
   onQueryChange: (q: string) => void;
   sortField: SortField;
@@ -38,6 +39,7 @@ export function Toolbar({
   onUploadClick,
   onFilesSelected,
   onNewFolder,
+  onCliUploadClick,
   query,
   onQueryChange,
   sortField,
@@ -89,6 +91,10 @@ export function Toolbar({
       <Button onClick={onNewFolder}>
         <FolderPlusIcon />
         New folder
+      </Button>
+      <Button onClick={onCliUploadClick} title="Upload from a Linux server using curl or Python">
+        <TerminalIcon />
+        CLI Upload
       </Button>
 
       <div className="flex-1" />

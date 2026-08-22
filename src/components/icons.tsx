@@ -196,3 +196,13 @@ export function SpinnerIcon(props: IconProps) {
     </Base>
   );
 }
+
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2" />
+      <path d="m7 9.5 3 2.5-3 2.5" />
+      <path d="M12.5 14.5H17" />
+    </Base>
+  );
+}

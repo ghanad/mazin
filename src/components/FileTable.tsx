@@ -6,6 +6,7 @@ import type { Entry } from "@/types";
 import { isTextFile } from "@/lib/mime";
 import {
   DownloadIcon,
+  EyeIcon,
   FileIcon,
   FolderIcon,
   LinkIcon,
@@ -151,7 +152,7 @@ export function FileTable({
           <th scope="col" className="sticky top-0 z-10 hidden w-36 bg-white pb-2 px-3 font-medium text-xs uppercase tracking-wide text-zinc-400 md:table-cell">
             Modified
           </th>
-          <th scope="col" className="sticky top-0 z-10 w-14 bg-white pb-2 pl-3 pr-4">
+          <th scope="col" className="sticky top-0 z-10 w-28 bg-white pb-2 pl-3 pr-4">
             <span className="sr-only">Actions</span>
           </th>
         </tr>
@@ -195,7 +196,7 @@ function TableRow({
         { label: "Delete", icon: <TrashIcon />, onSelect: () => onDelete(entry), danger: true },
       ]
     : [
-        ...(canView ? [{ label: "View", icon: <FileIcon />, onSelect: () => onOpenText(entry) }] : []),
+        ...(canView ? [{ label: "View", icon: <EyeIcon />, onSelect: () => onOpenText(entry) }] : []),
         { label: "Download", icon: <DownloadIcon />, onSelect: () => onDownload(entry) },
         { label: "Copy URL", icon: <LinkIcon />, onSelect: () => onCopyUrl(entry) },
         { label: "Rename", icon: <PencilIcon />, onSelect: () => onRename(entry) },
@@ -205,7 +206,9 @@ function TableRow({
   return (
     <tr
       className="group border-b border-zinc-100 transition-colors last:border-b-0 hover:bg-zinc-50"
-      onDoubleClick={() => (isFolder ? onOpenFolder(entry) : canView ? onOpenText(entry) : onDownload(entry))}
+      onDoubleClick={() => {
+        if (isFolder) onOpenFolder(entry);
+      }}
     >
       <td className="py-0 pl-4 pr-3">
         <div className="flex min-w-0 items-center gap-2.5 py-2">
@@ -227,13 +230,17 @@ function TableRow({
               {entry.name}
             </button>
           ) : (
-            <button
-              onClick={() => canView ? onOpenText(entry) : onDownload(entry)}
+            <a
+              href={entry.url ?? "#"}
+              download
+              onClick={(event) => {
+                if (!entry.url) event.preventDefault();
+              }}
               className="min-w-0 truncate rounded text-left text-zinc-800 transition-colors hover:text-blue-700 hover:underline hover:decoration-blue-300 hover:underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
               title={entry.name}
             >
               {entry.name}
-            </button>
+            </a>
           )}
         </div>
       </td>
@@ -253,6 +260,16 @@ function TableRow({
       </td>
       <td className="py-1.5 pl-3 pr-4 text-right">
         <div className="flex items-center justify-end gap-1">
+          {canView && (
+            <button
+              onClick={() => onOpenText(entry)}
+              aria-label={`View ${entry.name}`}
+              title="View"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 opacity-0 transition-all hover:bg-zinc-200/70 hover:text-zinc-700 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 group-hover:opacity-100 max-sm:opacity-100"
+            >
+              <EyeIcon />
+            </button>
+          )}
           {!isFolder && (
             <button
               onClick={() => onDownload(entry)}

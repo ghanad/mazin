@@ -73,16 +73,16 @@ export function TextFileViewer({ file, onClose, onSaved }: { file: { key: string
   }, [editing, file, save]);
 
   return (
-    <Modal open={Boolean(file)} onClose={close} title={file?.name ?? "Text file"} dismissable={state !== "saving"} className="max-w-5xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl max-sm:h-[calc(100dvh-2rem)] max-sm:max-w-none">
-      <div className="flex max-h-[calc(100dvh-8rem)] flex-col px-5 pb-5">
+    <Modal open={Boolean(file)} onClose={close} title={file?.name ?? "Text file"} dismissable={state !== "saving"} size="editor">
+      <div className="flex min-h-0 flex-1 flex-col px-5 pb-5">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
           {data && <span>{data.size.toLocaleString()} bytes{data.lastModified ? ` · ${new Date(data.lastModified).toLocaleString()}` : ""}</span>}
           {state === "saved" && <span className="text-emerald-600" role="status">Saved</span>}
           {data && !canEdit && <span className="text-amber-700">Read-only: the server did not provide an ETag</span>}
         </div>
-        {state === "loading" && <p role="status" className="py-16 text-center text-sm text-zinc-500">Loading file…</p>}
+        {state === "loading" && !data && <p role="status" className="flex flex-1 items-center justify-center text-sm text-zinc-500">Loading file…</p>}
         {state === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><span>{error}</span>{conflict ? <Button size="sm" onClick={reloadLatest}>Reload latest</Button> : data && editing ? <Button size="sm" onClick={() => void save()}>Try save again</Button> : <Button size="sm" onClick={() => file && void load(file.key)}>Retry</Button>}</div>}
-        {data && <textarea aria-label={`Contents of ${file?.name}`} readOnly={!editing} value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-[18rem] w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-5 text-zinc-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 read-only:cursor-default read-only:bg-zinc-50" />}
+        {data && <textarea aria-label={`Contents of ${file?.name}`} readOnly={!editing} value={draft} onChange={(event) => setDraft(event.target.value)} spellCheck={false} className="min-h-0 w-full flex-1 resize-none rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-5 text-zinc-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 read-only:cursor-default read-only:bg-zinc-50" />}
         {error && state !== "error" && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {file?.url && <a href={file.url} download className="inline-flex h-9 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"><DownloadIcon />Download</a>}

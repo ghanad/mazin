@@ -61,6 +61,7 @@ export interface ModalProps {
   children: ReactNode;
   /** When false, Escape and backdrop clicks cannot dismiss the dialog. */
   dismissable?: boolean;
+  size?: "default" | "editor";
   className?: string;
 }
 
@@ -70,6 +71,7 @@ export function Modal({
   title,
   children,
   dismissable = true,
+  size = "default",
   className = "",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -94,8 +96,12 @@ export function Modal({
 
   if (!open) return null;
 
+  const isEditor = size === "editor";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center ${isEditor ? "p-0 sm:p-4" : "p-4"}`}
+    >
       <div
         className="absolute inset-0 bg-zinc-950/25"
         onClick={dismissable ? onClose : undefined}
@@ -106,10 +112,16 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`animate-rise-in relative w-full max-w-md rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-950/10 ${className}`}
+        className={`animate-rise-in relative bg-white shadow-xl shadow-zinc-950/10 ${
+          isEditor
+            ? "flex h-dvh w-full max-w-none flex-col border-0 sm:h-[90dvh] sm:max-h-[90dvh] sm:w-[90vw] sm:max-w-[90rem] sm:rounded-xl sm:border sm:border-zinc-200"
+            : "w-full max-w-md rounded-xl border border-zinc-200"
+        } ${className}`}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-1">
-          <h2 className="text-[15px] font-semibold text-zinc-900">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between px-5 pt-4 pb-1">
+          <h2 className="min-w-0 truncate text-[15px] font-semibold text-zinc-900" title={title}>
+            {title}
+          </h2>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close dialog">
             <XIcon />
           </Button>

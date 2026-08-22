@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "File Server",
+  title: "Mazin File Server",
   description: "Internal file repository backed by Ceph S3",
 };
 

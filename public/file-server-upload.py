@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-file-server-upload.py — upload a file to the Internal File Server from any
+file-server-upload.py — upload files or a directory to the Internal File Server from any
 machine with Python 3. Uses only the standard library; nothing to pip install.
 
 The File Server application only orchestrates uploads: the file bytes go
@@ -11,7 +11,7 @@ endpoint directly over HTTPS/HTTP.
 Usage:
     python3 file-server-upload.py \
         --server https://files.example.com \
-        --file ./ubuntu.iso \
+    --directory ./release \
         --prefix iso/linux
 
     # server URL via environment variable instead of --server
@@ -20,6 +20,7 @@ Usage:
 Options:
     --server URL       File Server base URL (or FILE_SERVER_URL env var)
     --file PATH        Local file to upload
+    --directory PATH   Recursively upload a directory, preserving its name and layout
     --prefix PREFIX    Destination folder inside the bucket (default: bucket root)
     --overwrite        Replace the destination file if it already exists
     --concurrency N    Parallel part uploads for large files (default: 3)
@@ -54,6 +55,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_CONCURRENCY = 3
+CLI_UPLOAD_PROTOCOL_VERSION = 1
 PART_ATTEMPTS = 3
 RETRY_BASE_DELAY = 0.5  # seconds, doubled on every retry (exponential backoff)
 API_TIMEOUT = 60  # seconds for JSON API calls
@@ -99,6 +101,25 @@ class ApiClient:
                 f"Could not reach the File Server at {self.server} ({describe(err)})"
             ) from err
         return json.loads(body.decode("utf-8"))
+
+    def get(self, path: str) -> dict:
+        request = urllib.request.Request(f"{self.server}{path}", method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=API_TIMEOUT) as response:
+                body = response.read()
+        except urllib.error.HTTPError as err:
+            raise UploadError(f"{path} failed with HTTP {err.code}") from err
+        except (urllib.error.URLError, OSError) as err:
+            raise UploadError(
+                f"Could not reach the File Server at {self.server} ({describe(err)})"
+            ) from err
+        try:
+            return json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as err:
+            raise UploadError(f"{path} returned an invalid response") from err
+
+    def create_folder(self, prefix: str, name: str) -> dict:
+        return self.post("/api/folders", {"prefix": prefix, "name": name})
 
     def create_upload(self, prefix: str, name: str, size: int,
                       content_type: str, overwrite: bool) -> dict:
@@ -351,16 +372,73 @@ def guess_content_type(path: str) -> str:
     return guessed or "application/octet-stream"
 
 
+def join_prefix(prefix: str, name: str) -> str:
+    return f"{prefix}/{name}" if prefix else name
+
+
+def verify_directory_upload_support(api: ApiClient) -> None:
+    """Verify only the optional directory-upload protocol, not app releases."""
+    try:
+        capabilities = api.get("/api/cli/capabilities")
+    except UploadError as err:
+        raise UploadError(
+            "this File Server does not support directory uploads; deploy a "
+            "compatible File Server version"
+        ) from err
+
+    version = capabilities.get("uploadProtocolVersion")
+    features = capabilities.get("features", [])
+    if version != CLI_UPLOAD_PROTOCOL_VERSION or "directory-upload" not in features:
+        download_url = capabilities.get("downloadUrl", f"{api.server}/file-server-upload.py")
+        raise UploadError(
+            "the CLI uploader is not compatible with this File Server for "
+            f"directory uploads. Download the matching script: {download_url}"
+        )
+
+
+def collect_directory(path: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """Return relative directories and files; refuse symlinks deliberately."""
+    directories: list[str] = []
+    files: list[tuple[str, str]] = []
+    def walk_error(err: OSError) -> None:
+        raise UploadError(f"cannot read directory: {err.filename or err}")
+
+    for root, dirnames, filenames in os.walk(path, followlinks=False, onerror=walk_error):
+        for name in dirnames + filenames:
+            candidate = os.path.join(root, name)
+            if os.path.islink(candidate):
+                raise UploadError(f"directory upload does not follow symlink: '{candidate}'")
+        relative_root = os.path.relpath(root, path)
+        if relative_root != ".":
+            directories.append(relative_root)
+        for name in filenames:
+            absolute = os.path.join(root, name)
+            if not os.path.isfile(absolute):
+                raise UploadError(f"not a regular file: '{absolute}'")
+            files.append((absolute, os.path.relpath(absolute, path)))
+    return directories, files
+
+
 def parse_args(argv: list | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Upload a file to the Internal File Server (direct-to-storage).",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"file-server-upload.py (upload protocol {CLI_UPLOAD_PROTOCOL_VERSION})",
     )
     parser.add_argument(
         "--server",
         default=os.environ.get("FILE_SERVER_URL", ""),
         help="File Server base URL (or set the FILE_SERVER_URL environment variable)",
     )
-    parser.add_argument("--file", required=True, help="local file to upload")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--file", help="local file to upload")
+    source.add_argument(
+        "--directory",
+        help="local directory to upload recursively (preserves its name and layout)",
+    )
     parser.add_argument(
         "--prefix",
         default="",
@@ -388,29 +466,18 @@ def parse_args(argv: list | None = None) -> argparse.Namespace:
     return args
 
 
-def main(argv: list | None = None) -> int:
-    args = parse_args(argv)
-
-    path = os.path.expanduser(args.file)
-    try:
-        size = os.path.getsize(path)
-    except OSError as err:
-        print(f"error: cannot read '{args.file}': {err.strerror}", file=sys.stderr)
-        return EXIT_FAILED
-
+def upload_file(api: ApiClient, path: str, prefix: str, overwrite: bool,
+                concurrency: int) -> None:
+    size = os.path.getsize(path)
     name = os.path.basename(path)
-    prefix = normalize_prefix(args.prefix)
     content_type = guess_content_type(name)
-    destination = f"{prefix}/{name}" if prefix else name
-
+    destination = join_prefix(prefix, name)
     print(f"Uploading '{name}' ({format_bytes(size)}) to '{destination}'")
 
-    api = ApiClient(args.server)
     key = None
     upload_id = None
-    install_signal_handlers()
     try:
-        plan = api.create_upload(prefix, name, size, content_type, args.overwrite)
+        plan = api.create_upload(prefix, name, size, content_type, overwrite)
         key = plan["key"]
         progress = Progress(size)
 
@@ -419,37 +486,75 @@ def main(argv: list | None = None) -> int:
                 put_to_presigned_url(plan["url"], fileobj.read(), content_type, False)
             progress.clear()
             print(f"Done — uploaded to '{plan['key']}' (single PUT)")
-            return EXIT_OK
+            return
 
         if plan["mode"] == "multipart":
             upload_id = plan["uploadId"]
             uploader = MultipartUploader(
-                api,
-                path,
-                key,
-                upload_id,
-                plan["partSize"],
-                size,
-                args.concurrency,
-                progress,
+                api, path, key, upload_id, plan["partSize"], size, concurrency, progress,
             )
             initial_urls = {p["partNumber"]: p["url"] for p in plan["parts"]}
             uploader.run(content_type, initial_urls)
-            upload_id = None  # finalized; nothing left to clean up
+            upload_id = None
             print(f"Done — uploaded to '{plan['key']}' "
                   f"(multipart, {uploader.part_count()} parts)")
-            return EXIT_OK
+            return
 
         raise UploadError(f"server returned unknown upload mode '{plan['mode']}'")
+    finally:
+        if upload_id and key:
+            api.abort(key, upload_id)
+
+
+def main(argv: list | None = None) -> int:
+    args = parse_args(argv)
+
+    path = os.path.expanduser(args.directory or args.file)
+    if args.directory and not os.path.isdir(path):
+        print(f"error: directory not found: '{args.directory}'", file=sys.stderr)
+        return EXIT_FAILED
+    if args.directory and os.path.islink(path):
+        print(f"error: directory upload does not follow symlink: '{args.directory}'", file=sys.stderr)
+        return EXIT_FAILED
+    if args.file and not os.path.isfile(path):
+        print(f"error: cannot read '{args.file}'", file=sys.stderr)
+        return EXIT_FAILED
+
+    prefix = normalize_prefix(args.prefix)
+    api = ApiClient(args.server)
+    install_signal_handlers()
+    try:
+        if args.file:
+            upload_file(api, path, prefix, args.overwrite, args.concurrency)
+            return EXIT_OK
+
+        verify_directory_upload_support(api)
+        root_name = os.path.basename(os.path.normpath(path))
+        destination_prefix = join_prefix(prefix, root_name)
+        directories, files = collect_directory(path)
+        print(f"Uploading directory '{root_name}' ({len(files)} files) to '{destination_prefix}'")
+        # Root and empty subdirectories need marker objects; duplicate markers
+        # are harmless because the files themselves define the directory too.
+        for relative in [""] + directories:
+            target = destination_prefix if not relative else join_prefix(destination_prefix, relative)
+            parent, name = os.path.split(target)
+            try:
+                api.create_folder(parent, name)
+            except UploadError as err:
+                if "HTTP 409" not in str(err):
+                    raise
+        for absolute, relative in files:
+            parent, name = os.path.split(relative)
+            upload_file(api, absolute, join_prefix(destination_prefix, parent) if parent else destination_prefix,
+                        args.overwrite, args.concurrency)
+        print(f"Done — uploaded directory to '{destination_prefix}'")
+        return EXIT_OK
     except KeyboardInterrupt:
         sys.stderr.write("\nInterrupted — cancelling the upload…\n")
         return EXIT_FAILED
     except UploadError as err:
         print(f"\nerror: {err}", file=sys.stderr)
         return EXIT_FAILED
-    finally:
-        if upload_id and key:
-            api.abort(key, upload_id)
 
 
 if __name__ == "__main__":

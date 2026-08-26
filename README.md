@@ -254,6 +254,9 @@ FILE_SERVER_URL=https://files.example.com python3 file-server-upload.py --file b
 
 # Tune parallel part uploads (default 3)
 python3 file-server-upload.py --server https://files.example.com --file big.iso --concurrency 4
+
+# Upload a directory recursively. The directory itself becomes a folder in the destination.
+python3 file-server-upload.py --server https://files.example.com --directory ./release --prefix artifacts
 ```
 
 Behaviour summary:
@@ -262,11 +265,16 @@ Behaviour summary:
 |---|---|
 | `--server URL` | File Server base URL (falls back to `FILE_SERVER_URL`) |
 | `--file PATH` | Local file; its basename becomes the destination name |
+| `--directory PATH` | Recursively upload a directory; its basename and layout are preserved, including empty folders |
 | `--prefix PREFIX` | Destination folder (default: bucket root) |
 | `--overwrite` | Replace an existing destination file |
 | `--concurrency N` | Parallel part uploads for large files (default `3`) |
 
-Small files are uploaded with one presigned PUT. Larger files use multipart upload with concurrent parts, per-part retries (three attempts, exponential backoff, fresh presigned URLs when needed), live progress, and automatic abort cleanup on failure or Ctrl+C/SIGTERM. Exit code is `0` on success.
+Small files are uploaded with one presigned PUT. Larger files use multipart upload with concurrent parts, per-part retries (three attempts, exponential backoff, fresh presigned URLs when needed), live progress, and automatic abort cleanup on failure or Ctrl+C/SIGTERM. Directory uploads preserve the source directory as the first destination segment and deliberately reject symlinks. Exit code is `0` on success.
+
+Directory upload uses a versioned CLI capability, separate from the web-app release version. A mismatched CLI/server protocol fails before any object is written and prints the URL for downloading the matching script. File-only uploads remain compatible with older servers.
+
+Run `python3 file-server-upload.py --version` to display the uploader's protocol version.
 
 ### curl example (small files only)
 
@@ -322,6 +330,7 @@ Presigned URLs embed temporary credentials: keep them out of logs and shell hist
 | `POST /api/uploads/presign-part` | Re-sign parts (retry/expiry path) |
 | `POST /api/uploads/complete` | CompleteMultipartUpload with collected ETags |
 | `POST /api/uploads/abort` | AbortMultipartUpload (cancel/cleanup) |
+| `GET /api/cli/capabilities` | Versioned capabilities used by optional CLI features |
 | `GET /files/[...path]` | Stream download (Range → 206) |
 | `HEAD /files/[...path]` | Metadata only (Range-aware) |
 | `GET /api/health` | Liveness: `{"status":"ok"}` |

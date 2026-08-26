@@ -14,6 +14,7 @@ import { POST as completeRoute } from "@/app/api/uploads/complete/route";
 import { POST as abortRoute } from "@/app/api/uploads/abort/route";
 import { GET as healthRoute } from "@/app/api/health/route";
 import { GET as readyRoute } from "@/app/api/health/ready/route";
+import { GET as cliCapabilitiesRoute } from "@/app/api/cli/capabilities/route";
 
 function jsonRequest(url: string, body: unknown) {
   return new NextRequest(`https://files.internal.example.com${url}`, {
@@ -43,6 +44,19 @@ beforeEach(() => {
     abortMultipartUpload: vi.fn().mockResolvedValue(undefined),
     checkReadiness: vi.fn().mockResolvedValue(undefined),
   };
+});
+
+describe("GET /api/cli/capabilities", () => {
+  it("advertises the versioned directory-upload capability", async () => {
+    const res = await cliCapabilitiesRoute(new Request("https://files.internal.example.com/api/cli/capabilities"));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      uploadProtocolVersion: 1,
+      features: ["directory-upload"],
+      downloadUrl: "https://files.internal.example.com/file-server-upload.py",
+    });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
 });
 
 describe("POST /api/folders", () => {

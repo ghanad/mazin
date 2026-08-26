@@ -7,6 +7,7 @@
 
 /** Path of the downloadable upload script, served from public/. */
 export const UPLOAD_SCRIPT_PATH = "/file-server-upload.py";
+export { CLI_UPLOAD_PROTOCOL_VERSION } from "./protocol";
 
 /** The API returns mode "single" only at or below this size (see parts.ts). */
 export const SMALL_FILE_LIMIT_MIB = 32;
@@ -35,7 +36,7 @@ function shellQuote(value: string): string {
 export function buildPythonCommand({ serverUrl, prefix }: CliCommandOptions): string {
   const parts = ["python3 file-server-upload.py"];
   if (serverUrl) parts.push(`--server ${shellQuote(serverUrl)}`);
-  parts.push("--file ./path/to/file.bin");
+  parts.push("--file ./path/to/file.bin"); // Or replace with: --directory ./path/to/folder
   const target = cliPrefix(prefix);
   if (target) parts.push(`--prefix ${shellQuote(target)}`);
   return parts.join(" \\\n    ");

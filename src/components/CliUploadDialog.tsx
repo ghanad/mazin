@@ -5,6 +5,7 @@ import {
   buildCurlScript,
   buildPythonCommand,
   SMALL_FILE_LIMIT_MIB,
+  CLI_UPLOAD_PROTOCOL_VERSION,
   UPLOAD_SCRIPT_PATH,
   type CliCommandOptions,
 } from "@/lib/cli/commands";
@@ -139,7 +140,7 @@ export function CliUploadDialog({ open, onClose, prefix, serverUrl }: CliUploadD
       >
         <p className="mb-2 text-xs text-zinc-500">
           Standard library only — no <code className="font-mono">pip install</code> needed.
-          Handles large files automatically via multipart upload with retries and abort cleanup.
+          Handles large files and whole directories automatically; directory layout (including empty folders) is preserved.
         </p>
         <pre className="overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed text-zinc-800">
           <code>{pythonCommand}</code>
@@ -150,7 +151,7 @@ export function CliUploadDialog({ open, onClose, prefix, serverUrl }: CliUploadD
             {copied === "python" ? "Copied" : "Copy command"}
           </Button>
           <a
-            href={UPLOAD_SCRIPT_PATH}
+            href={`${UPLOAD_SCRIPT_PATH}?v=${CLI_UPLOAD_PROTOCOL_VERSION}`}
             download="file-server-upload.py"
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3.5 text-sm font-medium text-zinc-700 transition-colors select-none hover:bg-zinc-50 hover:text-zinc-900 active:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:pointer-events-none disabled:opacity-50"
           >
@@ -159,8 +160,8 @@ export function CliUploadDialog({ open, onClose, prefix, serverUrl }: CliUploadD
           </a>
         </div>
         {origin && (
-          <p className="mt-2 truncate text-xs text-zinc-400" title={`${origin}${UPLOAD_SCRIPT_PATH}`}>
-            Script URL: <span className="font-mono">{origin}{UPLOAD_SCRIPT_PATH}</span>
+          <p className="mt-2 truncate text-xs text-zinc-400" title={`${origin}${UPLOAD_SCRIPT_PATH}?v=${CLI_UPLOAD_PROTOCOL_VERSION}`}>
+            Script URL: <span className="font-mono">{origin}{UPLOAD_SCRIPT_PATH}?v={CLI_UPLOAD_PROTOCOL_VERSION}</span>
           </p>
         )}
       </div>
@@ -201,7 +202,7 @@ export function CliUploadDialog({ open, onClose, prefix, serverUrl }: CliUploadD
         ) : (
           <>the bucket root. </>
         )}
-        Edit <code className="font-mono">FILE</code>/<code className="font-mono">--file</code> before running. No
+        Edit <code className="font-mono">FILE</code>/<code className="font-mono">--file</code> before running, or use <code className="font-mono">--directory ./path</code>. No
         authentication is required yet; anyone with network access can upload.
       </p>
     </Modal>

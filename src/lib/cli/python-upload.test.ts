@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -35,6 +35,7 @@ interface PutRecord {
 }
 
 interface FakeRecords {
+  folders: Record<string, unknown>[];
   creates: Record<string, unknown>[];
   presigns: Record<string, unknown>[];
   completes: Record<string, unknown>[];
@@ -60,10 +61,14 @@ interface FakeConfig {
   conflictNames?: string[];
   /** Hold the first PUT open until an abort arrives or the test releases it. */
   hangFirstPut?: boolean;
+  /** Capability endpoint is omitted to emulate an older File Server. */
+  directoryUploadUnsupported?: boolean;
+  directoryUploadProtocolVersion?: number;
 }
 
 function startFakeServer(config: FakeConfig): Promise<FakeServer> {
   const records: FakeRecords = {
+    folders: [],
     creates: [],
     presigns: [],
     completes: [],
@@ -115,6 +120,26 @@ function startFakeServer(config: FakeConfig): Promise<FakeServer> {
     // Presigned URLs are absolute in production; derive the fake origin from
     // the request the same way.
     const host = `http://${req.headers.host ?? "127.0.0.1"}`;
+
+    if (req.method === "GET" && pathname === "/api/cli/capabilities") {
+      if (config.directoryUploadUnsupported) {
+        res.writeHead(404).end();
+        return;
+      }
+      json(res, 200, {
+        uploadProtocolVersion: config.directoryUploadProtocolVersion ?? 1,
+        features: ["directory-upload"],
+        downloadUrl: `${host}/file-server-upload.py`,
+      });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/folders") {
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as Record<string, unknown>;
+      records.folders.push(body);
+      json(res, 200, { ok: true });
+      return;
+    }
 
     if (req.method === "POST" && pathname === "/api/uploads/create") {
       const body = JSON.parse((await readBody(req)).toString("utf8")) as {
@@ -304,6 +329,51 @@ describe.skipIf(!hasPython)("file-server-upload.py (end to end)", () => {
       expect(fake.records.puts[0].body.toString()).toBe("hello world\n");
       expect(fake.records.completes).toHaveLength(0);
       expect(fake.records.aborts).toHaveLength(0);
+    } finally {
+      await fake.close();
+    }
+  }, 60_000);
+
+  it("uploads a directory recursively and preserves its root folder", async () => {
+    const directory = path.join(tmp, "release");
+    const nested = path.join(directory, "nested");
+    const empty = path.join(directory, "empty");
+    mkdirSync(nested, { recursive: true });
+    mkdirSync(empty);
+    writeFileSync(path.join(directory, "README.md"), "root");
+    writeFileSync(path.join(nested, "app.txt"), "nested");
+    const fake = await startFakeServer({ multipartThreshold: 1024, partSize: 512 });
+    try {
+      const result = await runUpload(["--server", fake.url, "--directory", directory, "--prefix", "artifacts"]);
+      expect(result.code).toBe(0);
+      expect(fake.records.creates).toEqual(expect.arrayContaining([
+        expect.objectContaining({ prefix: "artifacts/release", name: "README.md" }),
+        expect.objectContaining({ prefix: "artifacts/release/nested", name: "app.txt" }),
+      ]));
+      expect(fake.records.folders).toEqual(expect.arrayContaining([
+        expect.objectContaining({ prefix: "artifacts", name: "release" }),
+        expect.objectContaining({ prefix: "artifacts/release", name: "empty" }),
+      ]));
+      expect(result.stdout).toContain("artifacts/release");
+    } finally {
+      await fake.close();
+    }
+  }, 60_000);
+
+  it("refuses directory upload when the server advertises another CLI protocol version", async () => {
+    const directory = path.join(tmp, "incompatible-directory");
+    mkdirSync(directory, { recursive: true });
+    const fake = await startFakeServer({
+      multipartThreshold: 1024,
+      partSize: 512,
+      directoryUploadProtocolVersion: 2,
+    });
+    try {
+      const result = await runUpload(["--server", fake.url, "--directory", directory]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("not compatible");
+      expect(result.stderr).toContain("file-server-upload.py");
+      expect(fake.records.creates).toHaveLength(0);
     } finally {
       await fake.close();
     }

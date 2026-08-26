@@ -189,6 +189,15 @@ export function ArrowUpDownIcon(props: IconProps) {
   );
 }
 
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 5v14" />
+      <path d="m6.5 13.5 5.5 5.5 5.5-5.5" />
+    </Base>
+  );
+}
+
 export function SpinnerIcon(props: IconProps) {
   return (
     <Base {...props} className={`animate-spin-slow ${props.className ?? ""}`}>

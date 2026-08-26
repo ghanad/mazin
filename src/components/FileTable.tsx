@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
-import type { Entry } from "@/types";
+import type { Entry, SortDirection, SortField } from "@/types";
 import { isPdfFile, isTextFile } from "@/lib/mime";
 import {
   DownloadIcon,
@@ -13,6 +13,7 @@ import {
   MoreVerticalIcon,
   PencilIcon,
   TrashIcon,
+  ArrowDownIcon,
 } from "./icons";
 
 /* ---------- Row action menu ---------- */
@@ -122,6 +123,9 @@ export function RowMenu({ actions, entryName }: { actions: MenuAction[]; entryNa
 
 export interface FileTableProps {
   entries: Entry[];
+  sortField: SortField;
+  sortDirection: SortDirection;
+  onSortChange: (field: SortField, direction: SortDirection) => void;
   onOpenFolder: (entry: Entry) => void;
   onDownload: (entry: Entry) => void;
   onCopyUrl: (entry: Entry) => void;
@@ -133,6 +137,9 @@ export interface FileTableProps {
 
 export function FileTable({
   entries,
+  sortField,
+  sortDirection,
+  onSortChange,
   onOpenFolder,
   onDownload,
   onCopyUrl,
@@ -141,20 +148,36 @@ export function FileTable({
   onOpenText,
   onOpenPdf,
 }: FileTableProps) {
+  const sortBy = (field: SortField) => {
+    onSortChange(field, field === sortField && sortDirection === "asc" ? "desc" : "asc");
+  };
+
   return (
     <table className="w-full border-separate border-spacing-0 text-sm">
       <thead>
-        <tr className="border-b border-zinc-200 text-left">
-          <th scope="col" className="sticky top-0 z-10 bg-white pb-2 pl-4 pr-3 font-medium text-xs uppercase tracking-wide text-zinc-400">
-            Name
+        <tr className="text-left">
+          <th
+            scope="col"
+            aria-sort={sortField === "name" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+            className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-50/95 px-2 py-2.5 pl-4 backdrop-blur-sm"
+          >
+            <SortHeader label="Name" active={sortField === "name"} direction={sortDirection} onClick={() => sortBy("name")} />
           </th>
-          <th scope="col" className="sticky top-0 z-10 hidden w-28 bg-white pb-2 px-3 font-medium text-xs uppercase tracking-wide text-zinc-400 sm:table-cell">
-            Size
+          <th
+            scope="col"
+            aria-sort={sortField === "size" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+            className="sticky top-0 z-10 hidden w-28 border-b border-zinc-200 bg-zinc-50/95 px-3 py-2.5 backdrop-blur-sm sm:table-cell"
+          >
+            <SortHeader label="Size" active={sortField === "size"} direction={sortDirection} onClick={() => sortBy("size")} />
           </th>
-          <th scope="col" className="sticky top-0 z-10 hidden w-36 bg-white pb-2 px-3 font-medium text-xs uppercase tracking-wide text-zinc-400 md:table-cell">
-            Modified
+          <th
+            scope="col"
+            aria-sort={sortField === "modified" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+            className="sticky top-0 z-10 hidden w-36 border-b border-zinc-200 bg-zinc-50/95 px-3 py-2.5 backdrop-blur-sm md:table-cell"
+          >
+            <SortHeader label="Modified" active={sortField === "modified"} direction={sortDirection} onClick={() => sortBy("modified")} />
           </th>
-          <th scope="col" className="sticky top-0 z-10 w-28 bg-white pb-2 pl-3 pr-4">
+          <th scope="col" className="sticky top-0 z-10 w-28 border-b border-zinc-200 bg-zinc-50/95 py-2.5 pl-3 pr-4 backdrop-blur-sm">
             <span className="sr-only">Actions</span>
           </th>
         </tr>
@@ -178,6 +201,43 @@ export function FileTable({
   );
 }
 
+function SortHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: SortDirection;
+  onClick: () => void;
+}) {
+  const order = direction === "asc" ? "ascending" : "descending";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Sort by ${label}${active ? `, currently ${order}` : ""}`}
+      title={active ? `Sorted ${order} — click to reverse` : `Sort by ${label}`}
+      className={`-my-1 -ml-1 flex min-h-7 items-center gap-1 rounded-md px-1 text-xs font-semibold tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 ${
+        active
+          ? "text-blue-700"
+          : "text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900"
+      }`}
+    >
+      <span>{label}</span>
+      <ArrowDownIcon
+        width={14}
+        height={14}
+        className={`shrink-0 transition-transform ${
+          active ? (direction === "asc" ? "rotate-180" : "") : "text-zinc-400"
+        }`}
+      />
+    </button>
+  );
+}
+
 function TableRow({
   entry,
   onOpenFolder,
@@ -189,7 +249,7 @@ function TableRow({
   onOpenPdf,
 }: {
   entry: Entry;
-} & Omit<FileTableProps, "entries">) {
+} & Omit<FileTableProps, "entries" | "sortField" | "sortDirection" | "onSortChange">) {
   const isFolder = entry.type === "folder";
   const canViewText = !isFolder && isTextFile(entry.key);
   const canViewPdf = !isFolder && isPdfFile(entry.key);

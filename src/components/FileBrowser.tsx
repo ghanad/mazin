@@ -376,6 +376,12 @@ function FileBrowserInner({ bucket }: { bucket: string | null }) {
           ) : (
             <FileTable
               entries={visibleEntries}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSortChange={(field, direction) => {
+                setSortField(field);
+                setSortDirection(direction);
+              }}
               onOpenFolder={openFolder}
               onDownload={downloadFile}
               onCopyUrl={copyUrl}
